@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Minecraft Log Viewer PRO</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1f2937;
+  --border: #30363d;
+  --accent: #58a6ff;
+  --accent-dim: rgba(88,166,255,0.12);
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --orange: #ffa657;
+  --line-h: 22px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.badge {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(88,166,255,0.3);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--surface);
+  position: relative;
+}
+
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.drop-zone input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+
+.drop-icon { font-size: 32px; margin-bottom: 8px; }
+.drop-label { font-size: 14px; color: var(--text-muted); }
+.drop-label strong { color: var(--text); }
+
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search-wrap {
+  flex: 1;
+  min-width: 240px;
+  position: relative;
+}
+
+.search-wrap svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+input[type=text] {
+  width: 100%;
+  height: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 0 10px 0 34px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input[type=text]:focus { border-color: var(--accent); }
+
+select {
+  height: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+select:focus { border-color: var(--accent); }
+
+.btn {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn:hover { background: var(--surface2); border-color: #58a6ff55; }
+.btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn.primary:hover { background: #2ea043; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.stats-bar {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  align-items: center;
+}
+
+.stat { display: flex; align-items: center; gap: 5px; }
+.stat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.stat-val { font-weight: 600; color: var(--text); }
+.stat-lbl { color: var(--text-muted); }
+
+.progress-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-wrap.visible { display: flex; }
+.progress-label { font-size: 12px; color: var(--text-muted); }
+.progress-bar-bg {
+  height: 4px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.1s;
+  width: 0%;
+}
+
+.file-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.file-tab {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+
+.file-tab:hover, .file-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.file-tab.all {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(63,185,80,0.1);
+}
+
+.viewport-wrap {
+  position: relative;
+  background: #010409;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.viewport {
+  height: 560px;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 6px;
+  scroll-behavior: auto;
+}
+
+.viewport::-webkit-scrollbar { width: 6px; height: 6px; }
+.viewport::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.viewport::-webkit-scrollbar-track { background: transparent; }
+
+.spacer-top, .spacer-bot {
+  width: 100%;
+  background: transparent;
+}
+
+.line {
+  height: var(--line-h);
+  padding: 2px 6px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.line:hover { background: #1a2030; }
+
+.line-num {
+  color: var(--border);
+  font-size: 10px;
+  min-width: 48px;
+  text-align: right;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.line-file {
+  color: #3c5a7a;
+  font-size: 10px;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.line-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.wrap-mode .line-text { white-space: pre-wrap; overflow: visible; text-overflow: unset; }
+.wrap-mode .line { height: auto !important; min-height: var(--line-h); align-items: flex-start; padding-top: 3px; }
+
+.line-text mark {
+  background: rgba(255,210,0,0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* severity colors */
+.sev-ERROR .line-text, .sev-WARN .line-text { }
+.sev-ERROR { background: rgba(248,81,73,0.07); }
+.sev-WARN  { background: rgba(210,153,34,0.07); }
+
+.sev-ERROR .line-text .sev-tag { color: var(--red); }
+.sev-WARN  .line-text .sev-tag { color: var(--yellow); }
+.sev-INFO  .line-text .sev-tag { color: var(--accent); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.empty-icon { font-size: 40px; }
+
+.result-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.detail-panel {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-all;
+  white-space: pre-wrap;
+  position: relative;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.detail-panel.visible { display: block; }
+
+.detail-panel .detail-close {
+  position: absolute;
+  top: 8px; right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.detail-panel .detail-close:hover { color: var(--text); }
+.detail-header {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detail-copy {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.detail-copy:hover { color: var(--text); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <span style="font-size:24px">📜</span>
+    <h1>Minecraft Log Viewer</h1>
+    <span class="badge">PRO</span>
+  </header>
+
+  <div class="drop-zone" id="drop">
+    <input type="file" id="fileInput" multiple accept=".log,.txt,.gz">
+    <div class="drop-icon">📁</div>
+    <div class="drop-label">
+      <strong>Arrastra aquí</strong> tus logs, haz clic o pega con <kbd style="background:#30363d;border:1px solid #58a6ff44;border-radius:4px;padding:1px 6px;font-size:11px;font-family:monospace">Ctrl+V</kbd><br>
+      <span style="font-size:11px">Soporta .log · .txt · .gz · hasta 140+ archivos</span>
+    </div>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label" id="progressLabel">Cargando...</div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
+  </div>
+
+  <div class="stats-bar" id="statsBar" style="display:none">
+    <div class="stat">
+      <div class="stat-dot" style="background:#3fb950"></div>
+      <span class="stat-val" id="statFiles">0</span>
+      <span class="stat-lbl">archivos</span>
+    </div>
+    <div class="stat">
+      <div class="stat-dot" style="background:#58a6ff"></div>
+      <span class="stat-val" id="statLines">0</span>
+      <span class="stat-lbl">líneas</span>
+    </div>
+    <div class="stat">
+      <div class="stat-dot" style="background:#f85149"></div>
+      <span class="stat-val" id="statErrors">0</span>
+      <span class="stat-lbl">errores</span>
+    </div>
+    <div class="stat">
+      <div class="stat-dot" style="background:#d29922"></div>
+      <span class="stat-val" id="statWarns">0</span>
+      <span class="stat-lbl">advertencias</span>
+    </div>
+    <div style="margin-left:auto">
+      <button class="btn" id="btnExport" onclick="exportResults()">⬇ Exportar filtro</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="search-wrap">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input type="text" id="search" placeholder="Buscar texto, jugadores, IPs, errores...">
+    </div>
+    <select id="filterSev">
+      <option value="">Todos los niveles</option>
+      <option value="ERROR">ERROR</option>
+      <option value="WARN">WARN</option>
+      <option value="INFO">INFO</option>
+    </select>
+    <button class="btn" id="btnWrap" onclick="toggleWrap()" title="Activar/desactivar ajuste de línea">↩ Ajustar</button>
+    <button class="btn primary" onclick="applyFilter()">Filtrar</button>
+    <button class="btn" onclick="resetFilter()">Limpiar</button>
+  </div>
+
+  <div class="detail-panel" id="detailPanel">
+    <button class="detail-close" onclick="closeDetail()">✕</button>
+    <div class="detail-header">
+      <span id="detailFile"></span>
+      <button class="detail-copy" onclick="copyDetail()">Copiar</button>
+    </div>
+    <div id="detailText"></div>
+  </div>
+
+  <div class="viewport-wrap">
+    <div class="viewport" id="viewport">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📂</div>
+        <span>Carga tus archivos de log para comenzar</span>
+      </div>
+    </div>
+    <div class="result-count" id="resultCount" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+/* ─── State ─────────────────────────────────────────────── */
+let allLines   = [];   // {text, file, idx, sev}
+let displayed  = [];   // subset after filter
+let activeFile = null; // null = all
+let searchTerm = '';
+let sevFilter  = '';
+
+/* ─── Virtual scroll config ─────────────────────────────── */
+const LINE_H    = 22;
+const OVERSCAN  = 20;
+let vp, spacerTop, spacerBot, linePool;
+let lastStart   = -1, lastEnd = -1;
+
+/* ─── Severity detection ─────────────────────────────────── */
+function getSev(text) {
+  if (/\[ERROR\]|\bERROR\b|Exception|FATAL/.test(text)) return 'ERROR';
+  if (/\[WARN\]|\bWARN\b|WARNING/.test(text))            return 'WARN';
+  if (/\[INFO\]|\bINFO\b/.test(text))                    return 'INFO';
+  return '';
+}
+
+function highlightText(text, term) {
+  if (!term) return escHtml(text);
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escHtml(text).replace(new RegExp(escaped, 'gi'), m => `<mark>${m}</mark>`);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ─── File loading ────────────────────────────────────────── */
+const drop      = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); loadFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', e => loadFiles(e.target.files));
+
+async function loadFiles(files) {
+  if (!files.length) return;
+  allLines = [];
+
+  const pw = document.getElementById('progressWrap');
+  const pb = document.getElementById('progressBar');
+  const pl = document.getElementById('progressLabel');
+  pw.classList.add('visible');
+  document.getElementById('statsBar').style.display = 'none';
+  document.getElementById('fileTabs').style.display = 'none';
+  displayed = [];
+  renderVirtual([]);
+
+  const arr = Array.from(files);
+  const BATCH = 5; // process 5 files at a time to avoid memory spikes
+
+  for (let i = 0; i < arr.length; i += BATCH) {
+    const batch = arr.slice(i, i + BATCH);
+    const pct   = Math.round((i / arr.length) * 100);
+    pb.style.width = pct + '%';
+    pl.textContent = `Cargando ${i + 1}–${Math.min(i + BATCH, arr.length)} de ${arr.length}...`;
+
+    await new Promise(resolve => setTimeout(resolve, 0)); // yield to UI
+
+    const results = await Promise.allSettled(batch.map(readFile));
+    for (const r of results) {
+      if (r.status === 'fulfilled') allLines.push(...r.value);
+    }
+  }
+
+  pb.style.width = '100%';
+  pl.textContent = `✓ ${arr.length} archivos cargados — ${allLines.length.toLocaleString()} líneas`;
+  setTimeout(() => pw.classList.remove('visible'), 1500);
+
+  updateStats();
+  buildFileTabs(arr.map(f => f.name));
+  applyFilter();
+}
+
+async function readFile(file) {
+  try {
+    let text;
+    if (file.name.endsWith('.gz')) {
+      const buf    = await file.arrayBuffer();
+      const uint8  = new Uint8Array(buf);
+      text         = pako.inflate(uint8, { to: 'string' });
+    } else {
+      text = await file.text();
+    }
+    const lines = text.split('\n');
+    return lines
+      .filter(l => l.trim())
+      .map((t, i) => ({ text: t, file: file.name, sev: getSev(t) }));
+  } catch (err) {
+    console.error('Error leyendo:', file.name, err);
+    return [{ text: `[ERROR al leer ${file.name}]: ${err.message}`, file: file.name, sev: 'ERROR' }];
+  }
+}
+
+/* ─── Stats ──────────────────────────────────────────────── */
+function updateStats() {
+  const errors = allLines.filter(l => l.sev === 'ERROR').length;
+  const warns  = allLines.filter(l => l.sev === 'WARN').length;
+  document.getElementById('statFiles').textContent = new Set(allLines.map(l => l.file)).size;
+  document.getElementById('statLines').textContent = allLines.length.toLocaleString();
+  document.getElementById('statErrors').textContent = errors.toLocaleString();
+  document.getElementById('statWarns').textContent = warns.toLocaleString();
+  document.getElementById('statsBar').style.display = 'flex';
+}
+
+/* ─── File tabs ──────────────────────────────────────────── */
+function buildFileTabs(names) {
+  const wrap = document.getElementById('fileTabs');
+  wrap.innerHTML = '';
+
+  const all = document.createElement('span');
+  all.className = 'file-tab all active';
+  all.textContent = '📋 Todos';
+  all.onclick = () => { activeFile = null; setActiveTab(all); applyFilter(); };
+  wrap.appendChild(all);
+
+  for (const name of names) {
+    const t = document.createElement('span');
+    t.className = 'file-tab';
+    t.textContent = name.replace(/\.gz$/, '');
+    t.title = name;
+    t.onclick = () => { activeFile = name; setActiveTab(t); applyFilter(); };
+    wrap.appendChild(t);
+  }
+
+  wrap.style.display = 'flex';
+}
+
+function setActiveTab(el) {
+  document.querySelectorAll('.file-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+/* ─── Filter ─────────────────────────────────────────────── */
+function applyFilter() {
+  searchTerm = document.getElementById('search').value.toLowerCase().trim();
+  sevFilter  = document.getElementById('filterSev').value;
+
+  displayed = allLines.filter(l => {
+    if (activeFile && l.file !== activeFile) return false;
+    if (sevFilter && l.sev !== sevFilter)    return false;
+    if (searchTerm && !l.text.toLowerCase().includes(searchTerm)) return false;
+    return true;
+  });
+
+  displayed.forEach((l, i) => l.di = i);
+  if (wrapMode) {
+    renderFlat(displayed);
+  } else {
+    renderVirtual(displayed);
+  }
+
+  const rc = document.getElementById('resultCount');
+  if (displayed.length > 0) {
+    rc.style.display = 'block';
+    rc.textContent = `${displayed.length.toLocaleString()} líneas${searchTerm ? ` coinciden con "${searchTerm}"` : ''}`;
+  } else {
+    rc.style.display = 'none';
+  }
+}
+
+function resetFilter() {
+  document.getElementById('search').value = '';
+  document.getElementById('filterSev').value = '';
+  activeFile = null;
+  document.querySelectorAll('.file-tab').forEach(t => {
+    t.classList.remove('active');
+    if (t.textContent === '📋 Todos') t.classList.add('active');
+  });
+  applyFilter();
+}
+
+/* ─── Virtual scroll ─────────────────────────────────────── */
+function renderVirtual(lines) {
+  vp = document.getElementById('viewport');
+
+  const empty = document.getElementById('emptyState');
+  if (lines.length === 0) {
+    vp.innerHTML = '';
+    const e = empty.cloneNode(true);
+    e.style.display = 'flex';
+    e.querySelector('span').textContent = allLines.length
+      ? 'No hay resultados para este filtro'
+      : 'Carga tus archivos de log para comenzar';
+    vp.appendChild(e);
+    lastStart = lastEnd = -1;
+    return;
+  }
+
+  vp.innerHTML = `
+    <div id="spacerTop" class="spacer-top"></div>
+    <div id="lineContainer"></div>
+    <div id="spacerBot" class="spacer-bot"></div>
+  `;
+  spacerTop = document.getElementById('spacerTop');
+  spacerBot = document.getElementById('spacerBot');
+  linePool  = document.getElementById('lineContainer');
+
+  lastStart = lastEnd = -1;
+  vp.onscroll = () => updateVisible(lines);
+  updateVisible(lines);
+}
+
+function updateVisible(lines) {
+  const scrollTop  = vp.scrollTop;
+  const viewHeight = vp.clientHeight;
+  const total      = lines.length;
+
+  const start = Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
+  const end   = Math.min(total - 1, Math.ceil((scrollTop + viewHeight) / LINE_H) + OVERSCAN);
+
+  // Always re-render if window changed — skip only if identical range AND scroll didn't jump
+  if (start === lastStart && end === lastEnd) return;
+  lastStart = start;
+  lastEnd   = end;
+
+  spacerTop.style.height = (start * LINE_H) + 'px';
+  spacerBot.style.height = Math.max(0, (total - end - 1) * LINE_H) + 'px';
+
+  const frag = document.createDocumentFragment();
+  for (let i = start; i <= end; i++) {
+    frag.appendChild(buildLine(lines[i], i));
+  }
+  linePool.replaceChildren(frag);
+}
+
+function buildLine(obj, idx) {
+  const el   = document.createElement('div');
+  const sev  = obj.sev || '';
+  el.className = 'line' + (sev ? ' sev-' + sev : '');
+  el.style.height = LINE_H + 'px';
+  el.title = 'Clic para ver línea completa';
+  el.onclick = () => showDetail(obj);
+
+  const num  = document.createElement('span');
+  num.className = 'line-num';
+  num.textContent = idx + 1;
+
+  const file = document.createElement('span');
+  file.className = 'line-file';
+  file.textContent = obj.file.replace(/\.gz$/, '');
+  file.title = obj.file;
+
+  const txt  = document.createElement('span');
+  txt.className = 'line-text';
+  txt.innerHTML = highlightText(obj.text, searchTerm);
+
+  el.appendChild(num);
+  el.appendChild(file);
+  el.appendChild(txt);
+  return el;
+}
+
+/* ─── Export ─────────────────────────────────────────────── */
+function exportResults() {
+  if (!displayed.length) return;
+  const content = displayed.map(l => `[${l.file}] ${l.text}`).join('\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `logs-filtrados-${Date.now()}.txt`;
+  a.click();
+}
+
+/* ─── Wrap mode ──────────────────────────────────────────── */
+let wrapMode = false;
+
+function toggleWrap() {
+  wrapMode = !wrapMode;
+  const vp = document.getElementById('viewport');
+  const btn = document.getElementById('btnWrap');
+  if (wrapMode) {
+    vp.classList.add('wrap-mode');
+    btn.style.borderColor = 'var(--accent)';
+    btn.style.color = 'var(--accent)';
+    // In wrap mode, virtual scroll breaks (heights vary). Limit render to 2000 lines.
+    renderFlat(displayed);
+  } else {
+    vp.classList.remove('wrap-mode');
+    btn.style.borderColor = '';
+    btn.style.color = '';
+    renderVirtual(displayed);
+  }
+}
+
+function renderFlat(lines) {
+  const vp = document.getElementById('viewport');
+  vp.onscroll = null;
+  const MAX = 2000;
+  const shown = lines.slice(0, MAX);
+  const frag = document.createDocumentFragment();
+  shown.forEach((obj, i) => {
+    const el = buildLine(obj, i);
+    el.style.height = 'auto';
+    el.style.minHeight = LINE_H + 'px';
+    frag.appendChild(el);
+  });
+  vp.innerHTML = '';
+  if (lines.length > MAX) {
+    const note = document.createElement('div');
+    note.style.cssText = 'padding:8px 10px;font-size:11px;color:var(--text-muted)';
+    note.textContent = `Mostrando primeras ${MAX.toLocaleString()} de ${lines.length.toLocaleString()} líneas en modo ajuste. Desactiva ajuste para ver todas.`;
+    vp.appendChild(note);
+  }
+  vp.appendChild(frag);
+}
+
+/* ─── Detail panel ───────────────────────────────────────── */
+function showDetail(obj) {
+  const panel = document.getElementById('detailPanel');
+  document.getElementById('detailFile').textContent = obj.file;
+  document.getElementById('detailText').textContent = obj.text;
+  panel.classList.add('visible');
+  panel.scrollTop = 0;
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('visible');
+}
+
+function copyDetail() {
+  const text = document.getElementById('detailText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.detail-copy');
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => btn.textContent = 'Copiar', 1500);
+  });
+}
+
+/* ─── Close detail on Escape ─────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDetail();
+});
+
+/* ─── Search on Enter ────────────────────────────────────── */
+document.getElementById('search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') applyFilter();
+});
+
+/* ─── Paste files (Ctrl+V) ───────────────────────────────── */
+document.addEventListener('paste', async e => {
+  // Ignore if user is typing in the search box
+  if (document.activeElement === document.getElementById('search')) return;
+
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  const files = [];
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+
+  if (files.length === 0) return;
+
+  showPasteToast(files.length);
+  loadFiles(files);
+});
+
+function showPasteToast(count) {
+  let toast = document.getElementById('pasteToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'pasteToast';
+    toast.style.cssText = `
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #238636; color: #fff; font-size: 13px; font-weight: 500;
+      padding: 10px 20px; border-radius: 8px; z-index: 9999;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      display: flex; align-items: center; gap: 8px;
+      animation: slideUp 0.2s ease;
+    `;
+    document.body.appendChild(toast);
+    const style = document.createElement('style');
+    style.textContent = `@keyframes slideUp { from { opacity:0; transform:translateX(-50%) translateY(10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }`;
+    document.head.appendChild(style);
+  }
+  toast.innerHTML = `📋 ${count} archivo${count > 1 ? 's' : ''} pegado${count > 1 ? 's' : ''} — cargando...`;
+  toast.style.display = 'flex';
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(() => { toast.style.display = 'none'; }, 3000);
+}
+</script>
+</body>
+</html>
