@@ -289,7 +289,9 @@ select:focus { border-color: var(--accent); }
   user-select: none;
 }
 
-.line-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.line-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.wrap-mode .line-text { white-space: pre-wrap; overflow: visible; text-overflow: unset; }
+.wrap-mode .line { height: auto !important; min-height: var(--line-h); align-items: flex-start; padding-top: 3px; }
 
 .line-text mark {
   background: rgba(255,210,0,0.35);
@@ -327,6 +329,56 @@ select:focus { border-color: var(--accent); }
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
+
+.detail-panel {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-all;
+  white-space: pre-wrap;
+  position: relative;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.detail-panel.visible { display: block; }
+
+.detail-panel .detail-close {
+  position: absolute;
+  top: 8px; right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.detail-panel .detail-close:hover { color: var(--text); }
+.detail-header {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detail-copy {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.detail-copy:hover { color: var(--text); border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -390,11 +442,19 @@ select:focus { border-color: var(--accent); }
       <option value="WARN">WARN</option>
       <option value="INFO">INFO</option>
     </select>
+    <button class="btn" id="btnWrap" onclick="toggleWrap()" title="Activar/desactivar ajuste de línea">↩ Ajustar</button>
     <button class="btn primary" onclick="applyFilter()">Filtrar</button>
     <button class="btn" onclick="resetFilter()">Limpiar</button>
   </div>
 
-  <div class="file-tabs" id="fileTabs" style="display:none"></div>
+  <div class="detail-panel" id="detailPanel">
+    <button class="detail-close" onclick="closeDetail()">✕</button>
+    <div class="detail-header">
+      <span id="detailFile"></span>
+      <button class="detail-copy" onclick="copyDetail()">Copiar</button>
+    </div>
+    <div id="detailText"></div>
+  </div>
 
   <div class="viewport-wrap">
     <div class="viewport" id="viewport">
@@ -558,9 +618,12 @@ function applyFilter() {
     return true;
   });
 
-  // Add display index
   displayed.forEach((l, i) => l.di = i);
-  renderVirtual(displayed);
+  if (wrapMode) {
+    renderFlat(displayed);
+  } else {
+    renderVirtual(displayed);
+  }
 
   const rc = document.getElementById('resultCount');
   if (displayed.length > 0) {
@@ -618,23 +681,22 @@ function updateVisible(lines) {
   const viewHeight = vp.clientHeight;
   const total      = lines.length;
 
-  const rawStart = Math.floor(scrollTop / LINE_H) - OVERSCAN;
-  const rawEnd   = Math.ceil((scrollTop + viewHeight) / LINE_H) + OVERSCAN;
-  const start    = Math.max(0, rawStart);
-  const end      = Math.min(total - 1, rawEnd);
+  const start = Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
+  const end   = Math.min(total - 1, Math.ceil((scrollTop + viewHeight) / LINE_H) + OVERSCAN);
 
+  // Always re-render if window changed — skip only if identical range AND scroll didn't jump
   if (start === lastStart && end === lastEnd) return;
-  lastStart = start; lastEnd = end;
+  lastStart = start;
+  lastEnd   = end;
 
   spacerTop.style.height = (start * LINE_H) + 'px';
-  spacerBot.style.height = ((total - 1 - end) * LINE_H) + 'px';
+  spacerBot.style.height = Math.max(0, (total - end - 1) * LINE_H) + 'px';
 
-  linePool.innerHTML = '';
   const frag = document.createDocumentFragment();
   for (let i = start; i <= end; i++) {
     frag.appendChild(buildLine(lines[i], i));
   }
-  linePool.appendChild(frag);
+  linePool.replaceChildren(frag);
 }
 
 function buildLine(obj, idx) {
@@ -642,6 +704,8 @@ function buildLine(obj, idx) {
   const sev  = obj.sev || '';
   el.className = 'line' + (sev ? ' sev-' + sev : '');
   el.style.height = LINE_H + 'px';
+  el.title = 'Clic para ver línea completa';
+  el.onclick = () => showDetail(obj);
 
   const num  = document.createElement('span');
   num.className = 'line-num';
@@ -672,6 +736,76 @@ function exportResults() {
   a.download = `logs-filtrados-${Date.now()}.txt`;
   a.click();
 }
+
+/* ─── Wrap mode ──────────────────────────────────────────── */
+let wrapMode = false;
+
+function toggleWrap() {
+  wrapMode = !wrapMode;
+  const vp = document.getElementById('viewport');
+  const btn = document.getElementById('btnWrap');
+  if (wrapMode) {
+    vp.classList.add('wrap-mode');
+    btn.style.borderColor = 'var(--accent)';
+    btn.style.color = 'var(--accent)';
+    // In wrap mode, virtual scroll breaks (heights vary). Limit render to 2000 lines.
+    renderFlat(displayed);
+  } else {
+    vp.classList.remove('wrap-mode');
+    btn.style.borderColor = '';
+    btn.style.color = '';
+    renderVirtual(displayed);
+  }
+}
+
+function renderFlat(lines) {
+  const vp = document.getElementById('viewport');
+  vp.onscroll = null;
+  const MAX = 2000;
+  const shown = lines.slice(0, MAX);
+  const frag = document.createDocumentFragment();
+  shown.forEach((obj, i) => {
+    const el = buildLine(obj, i);
+    el.style.height = 'auto';
+    el.style.minHeight = LINE_H + 'px';
+    frag.appendChild(el);
+  });
+  vp.innerHTML = '';
+  if (lines.length > MAX) {
+    const note = document.createElement('div');
+    note.style.cssText = 'padding:8px 10px;font-size:11px;color:var(--text-muted)';
+    note.textContent = `Mostrando primeras ${MAX.toLocaleString()} de ${lines.length.toLocaleString()} líneas en modo ajuste. Desactiva ajuste para ver todas.`;
+    vp.appendChild(note);
+  }
+  vp.appendChild(frag);
+}
+
+/* ─── Detail panel ───────────────────────────────────────── */
+function showDetail(obj) {
+  const panel = document.getElementById('detailPanel');
+  document.getElementById('detailFile').textContent = obj.file;
+  document.getElementById('detailText').textContent = obj.text;
+  panel.classList.add('visible');
+  panel.scrollTop = 0;
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('visible');
+}
+
+function copyDetail() {
+  const text = document.getElementById('detailText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.detail-copy');
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => btn.textContent = 'Copiar', 1500);
+  });
+}
+
+/* ─── Close detail on Escape ─────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDetail();
+});
 
 /* ─── Search on Enter ────────────────────────────────────── */
 document.getElementById('search').addEventListener('keydown', e => {
